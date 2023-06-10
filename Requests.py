@@ -5,7 +5,6 @@ import json
 import requests
 from requests.auth import HTTPBasicAuth
 
-
 url = ''
 basic = HTTPBasicAuth('', '')
 
@@ -91,9 +90,9 @@ async def change_role(i, value):
 
     payload = {
         "role":
-        {
-            "id": str(value)
-        }
+            {
+                "id": str(value)
+            }
     }
 
     r = requests.put(url + '/api/v1/user/' + str(i), auth=basic, headers=headers, data=json.dumps(payload))
@@ -123,3 +122,31 @@ async def change_metro(i, field, value):
     print(r.text)
     print(payload)
 
+
+async def current_trips_d(user):
+    x = {}
+    user_array = []
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/trip/gettripsbyuserid?userId=' + user, auth=basic, headers=headers)
+    if r.status_code != 200:
+        return 'Пока что активных поездок нет!('
+    input_dict = r.json()
+    output_dict = [x for x in input_dict['result'] if x['status']['id'] == 1]
+    for item in output_dict:
+        user_array = []
+        for item2 in item['passengers']:
+
+            user_array.append(str(item2['firstName'] + ' ' + str(item2['metro']['name'])))
+
+        x.update({item['id']: {item['tripDate'] : user_array}})
+    print(x)
+    return x
+
+
+async def annul_trip_d(i, user):
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/trip/' + i + '/close?userId=' + user, auth=basic, headers=headers)
+
+
+if __name__ == '__main__':
+    asyncio.run(current_trips_d('739808500'))

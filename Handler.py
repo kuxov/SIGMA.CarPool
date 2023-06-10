@@ -1,21 +1,26 @@
 import random
+import re
 import string
 
 from aiogram import Bot, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import *
-from aiogram.types import message
+from aiogram.types import message, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils import executor
 
+import logging
 import Text
 from Keyboard import *
 from Requests import *
 from States import *
 from User import *
 
-TOKEN = ""
+TOKEN = ''
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 user = User()
 
 
@@ -26,7 +31,6 @@ def randomword(length):
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(msg: types.Message):
-
     user.id = msg.from_user.id
     print(user.id)
     sw = await get_user_role(user.id)
@@ -144,17 +148,34 @@ async def get_station(msg: types.Message):
     await UserStates.IDLE_P.set()
 
 
+@dp.callback_query_handler(state=UserStates.ACTUAL_TRIPS_D)
+async def process_callback_decline(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    await annul_trip_d(str(code), str(callback_query.from_user.id))
+    await callback_query.message.answer(text='Поездка удалена!')
+
+
 @dp.message_handler(state=UserStates.IDLE_D)
 async def choose_action_d(msg: types.Message):
     print('IDLE_D')
 
     match msg.text:
         case "Мои поездки":
+
             await msg.answer('Ваши актуальные поездки:',
                              reply_markup=MY_RIDES_KEYBOARD)
+            data = await current_trips_d(str(msg.from_user.id))
+            for key in data:
+                print(key)
+                await msg.answer(data[key], reply_markup=InlineKeyboardMarkup().add(
+                    InlineKeyboardButton('Отменить', callback_data='decline' + str(key))))
+
             await UserStates.ACTUAL_TRIPS_D.set()
+
         case "Создать поездку":
             pass
+
         case "Редактировать профиль":
             await msg.answer('Что вы хотите поменять?',
                              reply_markup=EDIT_DRIVER_PROFILE_KEYBOARD)
@@ -312,9 +333,6 @@ async def p_change_benefits(msg: types.Message):
                      reply_markup=EDIT_PASSENGER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_P.set()
 
-
-########################################################################################################################
-# Заглушки
 
 @dp.message_handler(state=UserStates.ACTUAL_TRIPS_D)
 async def stub1(msg: types.Message):

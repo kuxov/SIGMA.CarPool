@@ -30,9 +30,7 @@ LITTLE_EXPERIENCE_WARNING_KEYBOARD = ReplyKeyboardMarkup(
     KeyboardButton(BECAME_A_PASSENGER))
 
 MY_RIDES_KEYBOARD = ReplyKeyboardMarkup(
-    resize_keyboard=True).row(
-                              KeyboardButton("Вернуться в меню")
-                              )
+    resize_keyboard=True).row(KeyboardButton("Вернуться в меню"))
 
 EDIT_DRIVER_PROFILE_KEYBOARD = ReplyKeyboardMarkup(
     resize_keyboard=True).row(KeyboardButton("Имя")).row(
