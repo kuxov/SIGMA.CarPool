@@ -15,13 +15,12 @@ from Requests import *
 from States import *
 from User import *
 
-TOKEN = ''
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-user = User()
+db = DB()
 
 
 def randomword(length):
@@ -31,12 +30,13 @@ def randomword(length):
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(msg: types.Message):
-    user.id = msg.from_user.id
-    print(user.id)
-    sw = await get_user_role(user.id)
-    user.tg_link = msg.from_user.username
+    user_id = msg.from_user.id
+    # user_id = random.randint(50000, 100001)
+    tg_link = msg.from_user.username
+    chat_id = msg.chat.id
 
-    # user.id = random.randint(50000, 100001)
+    sw = await get_user_role(user_id)
+
     # sw = await get_user_role(user.id)
     # user.tg_link = randomword(10)
 
@@ -49,6 +49,7 @@ async def send_welcome(msg: types.Message):
             await UserStates.IDLE_P.set()
         case 0:
             await msg.answer(Text.REGISTRATION_STARTED_MESSAGE)
+            db.user_init(user_id, chat_id, tg_link)
             await msg.answer(Text.ARE_YOU_EMPLOYED_QUESTION, reply_markup=YES_NO_KEYBOARD)
             await UserStates.REGISTER.set()
 
@@ -66,15 +67,14 @@ async def start_registering(msg: types.Message):
 @dp.message_handler(state=REGISTRATION.GET_NAME)
 async def r_set_name(msg: types.Message):
     # check string
-    user.name = msg.text
+    db.set_name(msg.text, msg.from_user.id)
     await msg.answer(Text.WHATS_YOUR_PHONE_NUMBER_QUESTION, reply_markup=types.ReplyKeyboardRemove())
     await REGISTRATION.GET_NUMBER.set()
 
 
 @dp.message_handler(state=REGISTRATION.GET_NUMBER)
 async def r_set_phone(msg: types.Message):
-    # check string
-    user.phone = msg.text
+    db.set_phone(msg.text, msg.from_user.id)
     await msg.answer('Кто вы?', reply_markup=DRIVER_OR_PASSENGER_KEYBOARD)
     await REGISTRATION.GET_ROLE.set()
 
@@ -116,7 +116,7 @@ async def r_warn_driver(msg: types.Message):
 
 @dp.message_handler(state=REGISTRATION.GET_STATIONS_D)
 async def get_stations(msg: types.Message):
-    user.metro = msg.text.split(", ")
+    db.set_metro(msg.text, msg.from_user.id)
     await msg.answer(Text.HOW_MANY_FREE_SLOTS_QUESTION,
                      reply_markup=types.ReplyKeyboardRemove())
     await REGISTRATION.GET_CAPACITY_D.set()
@@ -124,35 +124,47 @@ async def get_stations(msg: types.Message):
 
 @dp.message_handler(state=REGISTRATION.GET_STATION_P)
 async def get_station(msg: types.Message):
-    user.metro = msg.text
+    db.set_metro(msg.text, msg.from_user.id)
     await msg.answer(Text.HOW_WILL_BENEFIT_QUESTION,
                      reply_markup=types.ReplyKeyboardRemove())
     await REGISTRATION.GET_BENEFITS_P.set()
 
 
 @dp.message_handler(state=REGISTRATION.GET_CAPACITY_D)
-async def get_station(msg: types.Message):
-    user.capacity = msg.text
-    await register_driver(user)
+async def get_capacity(msg: types.Message):
+    db.set_capacity(msg.text, msg.from_user.id)
+
+    await register_driver(db.get_driver_r(msg.from_user.id))
+
     await msg.answer(Text.REGISTRARION_ENDED_MESSAGE,
                      reply_markup=DRIVER_ACTIONS_KEYBOARD)
     await UserStates.IDLE_D.set()
 
 
 @dp.message_handler(state=REGISTRATION.GET_BENEFITS_P)
-async def get_station(msg: types.Message):
-    user.benefits = msg.text
-    await register_passenger(user)
+async def get_benefits(msg: types.Message):
+    db.set_benefits(msg.text, msg.from_user.id)
+
+    await register_passenger(db.get_passenger_r(msg.from_user.id))
+
     await msg.answer(Text.REGISTRARION_ENDED_MESSAGE,
                      reply_markup=PASSENGER_ACTIONS_KEYBOARD)
     await UserStates.IDLE_P.set()
 
 
 @dp.callback_query_handler(state=UserStates.ACTUAL_TRIPS_D)
-async def process_callback_decline(callback_query: types.CallbackQuery):
+async def process_callback_decline_d(callback_query: types.CallbackQuery):
     code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
 
-    await annul_trip_d(str(code), str(callback_query.from_user.id))
+    await annul_trip(str(code), str(callback_query.from_user.id))
+    await callback_query.message.answer(text='Поездка удалена!')
+
+
+@dp.callback_query_handler(state=UserStates.ACTUAL_TRIPS_P)
+async def process_callback_decline_p(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    await annul_trip(str(code), str(callback_query.from_user.id))
     await callback_query.message.answer(text='Поездка удалена!')
 
 
@@ -190,6 +202,13 @@ async def choose_action_p(msg: types.Message):
         case "Мои поездки":
             await msg.answer('Ваши актуальные поездки:',
                              reply_markup=MY_RIDES_KEYBOARD)
+
+            data = await current_trips_p(str(msg.from_user.id))
+            for key in data:
+                print(key)
+                await msg.answer(data[key], reply_markup=InlineKeyboardMarkup().add(
+                    InlineKeyboardButton('Отменить', callback_data='decline' + str(key))))
+
             await UserStates.ACTUAL_TRIPS_P.set()
         case "Найти поездку":
             pass
@@ -239,7 +258,7 @@ async def driver_choose_update(msg: types.Message):
 
 @dp.message_handler(state=DRIVER.UPD_NAME)
 async def d_change_name(msg: types.Message):
-    await change_field(msg.from_user.id, 'firstName', msg.text)
+    await change_field(msg.from_user.id, 'firstName', msg.text, db)
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_DRIVER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_D.set()
@@ -247,7 +266,7 @@ async def d_change_name(msg: types.Message):
 
 @dp.message_handler(state=DRIVER.UPD_NUMBER)
 async def d_change_num(msg: types.Message):
-    await change_field(msg.from_user.id, 'phone', msg.text)
+    await change_field(msg.from_user.id, 'phone', msg.text, db)
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_DRIVER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_D.set()
@@ -263,7 +282,7 @@ async def d_change_metro(msg: types.Message):
 
 @dp.message_handler(state=DRIVER.UPD_CAPACITY)
 async def d_change_capacity(msg: types.Message):
-    await change_field(msg.from_user.id, 'capacity', msg.text)
+    await change_field(msg.from_user.id, 'capacity', msg.text, db)
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_DRIVER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_D.set()
@@ -304,7 +323,7 @@ async def passenger_choose_update(msg: types.Message):
 
 @dp.message_handler(state=PASSENGER.UPD_NAME)
 async def p_change_name(msg: types.Message):
-    await change_field(msg.from_user.id, 'firstName', msg.text)
+    await change_field(msg.from_user.id, 'firstName', msg.text, db)
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_PASSENGER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_P.set()
@@ -312,7 +331,7 @@ async def p_change_name(msg: types.Message):
 
 @dp.message_handler(state=PASSENGER.UPD_NUMBER)
 async def p_change_num(msg: types.Message):
-    await change_field(msg.from_user.id, 'phone', msg.text)
+    await change_field(msg.from_user.id, 'phone', msg.text, db)
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_PASSENGER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_P.set()
@@ -328,7 +347,7 @@ async def p_change_metro(msg: types.Message):
 
 @dp.message_handler(state=PASSENGER.UPD_BENEFITS)
 async def p_change_benefits(msg: types.Message):
-    await change_field(msg.from_user.id, 'benefits', msg.text)
+    await change_field(msg.from_user.id, 'benefits', msg.text, db)
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_PASSENGER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_P.set()
