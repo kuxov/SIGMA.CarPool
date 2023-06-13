@@ -12,6 +12,8 @@ class UserStates(StatesGroup):
     UPDATE_PROFILE_D = State()
     UPDATE_PROFILE_P = State()
     BANNED = State()
+    SEND = State()
+    POST = State()
 
 
 class REGISTRATION(StatesGroup):
@@ -40,3 +42,17 @@ class PASSENGER(StatesGroup):
     UPD_ROLE = State()
     UPD_STATION_P = State()
     UPD_BENEFITS = State()
+
+
+class CREATE_TRIP(StatesGroup):
+    SET_DESTINATION = State()
+    SET_DATE = State()
+    SET_TIME = State()
+    CHECK = State()
+
+
+class FIND_TRIP(StatesGroup):
+    SET_DESTINATION = State()
+    SET_DATE = State()
+    FINALIZE = State()
+    CHECK = State()

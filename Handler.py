@@ -1,7 +1,9 @@
 import random
 import re
 import string
+from datetime import timedelta
 
+import aioschedule
 from aiogram import Bot, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import *
@@ -135,6 +137,10 @@ async def get_capacity(msg: types.Message):
     db.set_capacity(msg.text, msg.from_user.id)
 
     await register_driver(db.get_driver_r(msg.from_user.id))
+    stations = (db.get_driver_r(msg.from_user.id)[5]).split(', ')
+    for item in stations:
+        metro = await get_metro_id(item)
+        await add_metro(msg.from_user.id, metro)
 
     await msg.answer(Text.REGISTRARION_ENDED_MESSAGE,
                      reply_markup=DRIVER_ACTIONS_KEYBOARD)
@@ -164,8 +170,8 @@ async def process_callback_decline_d(callback_query: types.CallbackQuery):
 async def process_callback_decline_p(callback_query: types.CallbackQuery):
     code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
 
-    await annul_trip(str(code), str(callback_query.from_user.id))
-    await callback_query.message.answer(text='Поездка удалена!')
+    await delete_passenger(str(code), str(callback_query.from_user.id))
+    await callback_query.message.answer(text='Вы исключены из поездки!')
 
 
 @dp.message_handler(state=UserStates.IDLE_D)
@@ -186,12 +192,146 @@ async def choose_action_d(msg: types.Message):
             await UserStates.ACTUAL_TRIPS_D.set()
 
         case "Создать поездку":
-            pass
+            await msg.answer('Формирование поездки', reply_markup=HIDE_KEYBOARD)
+
+            buttons = [
+                [
+                    types.InlineKeyboardButton(text="В офис💼", callback_data="destination_1"),
+                    types.InlineKeyboardButton(text="Из офиса🏠", callback_data="destination_2")
+                ],
+                # [types.InlineKeyboardButton(text="Начать сначала", callback_data="destination_3")]
+            ]
+            keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+            await msg.answer('Выберите направление поездки', reply_markup=keyboard)
+            await CREATE_TRIP.SET_DESTINATION.set()
 
         case "Редактировать профиль":
             await msg.answer('Что вы хотите поменять?',
                              reply_markup=EDIT_DRIVER_PROFILE_KEYBOARD)
             await UserStates.UPDATE_PROFILE_D.set()
+
+
+########################################################################################################################
+# Создание поездки
+@dp.callback_query_handler(state=CREATE_TRIP.SET_DESTINATION)
+async def process_callback_destination_d(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    match code:
+        case '1':
+            db.set_trip_field(callback_query.from_user.id, 1, 'destination')
+        case '2':
+            db.set_trip_field(callback_query.from_user.id, 2, 'destination')
+    # case '3':
+    #    await UserStates.CREATE_TRIP_D.set()
+
+    await callback_query.message.answer('Успех!', reply_markup=ReplyKeyboardMarkup(
+        resize_keyboard=True).row(KeyboardButton("Продолжить")))
+    await CREATE_TRIP.SET_DATE.set()
+
+
+@dp.callback_query_handler(state=CREATE_TRIP.SET_DATE)
+async def process_callback_date_d(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    match code:
+        case '1':
+            db.set_trip_field(callback_query.from_user.id, (
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(days=0)).strftime('%Y-%m-%d'), 'trip_date')
+        case '2':
+            db.set_trip_field(callback_query.from_user.id, (
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(days=1)).strftime('%Y-%m-%d'), 'trip_date')
+        case '3':
+            db.set_trip_field(callback_query.from_user.id, (
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(days=2)).strftime('%Y-%m-%d'), 'trip_date')
+
+    #  case '4':
+    #     await UserStates.CREATE_TRIP_D.set()
+
+    await callback_query.message.answer(text='Успех!')
+    await callback_query.message.answer('Выберите время поездки \nНапример 09:30')
+    await CREATE_TRIP.SET_TIME.set()
+
+
+@dp.message_handler(state=CREATE_TRIP.SET_DATE)
+async def create_trip_set_date(msg: types.Message):
+    await msg.answer('Определяем дату поездки', reply_markup=HIDE_KEYBOARD)
+
+    buttons = [
+        [
+            types.InlineKeyboardButton(text="Завтра", callback_data="date_2"),
+            types.InlineKeyboardButton(text="Через два дня", callback_data="date_3")
+        ],
+        # [types.InlineKeyboardButton(text="Начать сначала", callback_data="date_4")]
+    ]
+
+    if datetime.datetime.utcnow().hour < 17:
+        buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
+
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await msg.answer('Выберите число поездки', reply_markup=keyboard)
+
+
+@dp.callback_query_handler(state=CREATE_TRIP.CHECK)
+async def process_callback_create_d(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    match code:
+        case '1':
+            await callback_query.message.answer(text='Поездка успешно опубликована!')
+            data = db.get_create_trip_info(callback_query.from_user.id)
+            stations = (db.get_driver_r(callback_query.from_user.id)[5]).split(', ')
+            day_id = await create_day(data)
+            for item in stations:
+                metro = await get_metro_id(item)
+                await create_trip(data, day_id, metro)
+        case '2':
+            pass
+
+    await callback_query.message.answer('Что вы хотите сделать?', reply_markup=DRIVER_ACTIONS_KEYBOARD)
+    await UserStates.IDLE_D.set()
+
+
+@dp.message_handler(state=CREATE_TRIP.SET_TIME)
+async def create_trip_set_time(msg: types.Message):
+    date_time = db.get_date(msg.from_user.id)
+
+    db.set_trip_field(msg.from_user.id, date_time[0] + 'T' + msg.text + ':00', 'trip_date'
+                      )
+
+    buttons = [[
+        types.InlineKeyboardButton(text="Подтвердить", callback_data="check_1"),
+        types.InlineKeyboardButton(text="Отменить", callback_data="check_2")
+    ]]
+
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    data = db.get_create_trip_info(msg.from_user.id)
+
+    lst = list(data)
+    match lst[3]:
+        case 1:
+            lst[3] = "в Офис"
+        case 2:
+            lst[3] = "из Офиса"
+
+    text = 'Все ли верно?'
+    await msg.answer(text, reply_markup=HIDE_KEYBOARD)
+
+    text = 'Маршрут: метро ' + lst[4] + ' ' + lst[3] + '\n' \
+                                                       'Дата: ' + lst[0] + '\n'
+
+    await msg.answer(text, reply_markup=keyboard)
+
+    await CREATE_TRIP.CHECK.set()
+
+
+########################################################################################################################
 
 
 @dp.message_handler(state=UserStates.IDLE_P)
@@ -211,11 +351,139 @@ async def choose_action_p(msg: types.Message):
 
             await UserStates.ACTUAL_TRIPS_P.set()
         case "Найти поездку":
-            pass
+            await msg.answer('Определим данные для поиска', reply_markup=HIDE_KEYBOARD)
+
+            buttons = [
+                [
+                    types.InlineKeyboardButton(text="В офис💼", callback_data="destination_1"),
+                    types.InlineKeyboardButton(text="Из офиса🏠", callback_data="destination_2")
+                ],
+                # [types.InlineKeyboardButton(text="Начать сначала", callback_data="destination_3")]
+            ]
+            keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+            await msg.answer('Выберите направление поездки', reply_markup=keyboard)
+            await FIND_TRIP.SET_DESTINATION.set()
         case "Редактировать профиль":
             await msg.answer('Что вы хотите поменять?',
                              reply_markup=EDIT_PASSENGER_PROFILE_KEYBOARD)
             await UserStates.UPDATE_PROFILE_P.set()
+
+
+########################################################################################################################
+# Поиск поездки
+
+
+@dp.callback_query_handler(state=FIND_TRIP.SET_DESTINATION)
+async def process_callback_destination_p(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    match code:
+        case '1':
+            db.set_trip_field(callback_query.from_user.id, 1, 'destination')
+        case '2':
+            db.set_trip_field(callback_query.from_user.id, 2, 'destination')
+    #  case '3':
+    #     await UserStates.FIND_TRIP_P.set()
+
+    await callback_query.message.answer('Успех!', reply_markup=ReplyKeyboardMarkup(
+        resize_keyboard=True).row(KeyboardButton("Продолжить")))
+    await FIND_TRIP.SET_DATE.set()
+
+
+@dp.callback_query_handler(state=FIND_TRIP.SET_DATE)
+async def process_callback_date_p(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    match code:
+        case '1':
+            db.set_trip_field(callback_query.from_user.id, (
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(days=0)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
+        case '2':
+            db.set_trip_field(callback_query.from_user.id, (
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(days=1)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
+        case '3':
+            db.set_trip_field(callback_query.from_user.id, (
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(days=2)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
+    #  case '4':
+    #     await UserStates.FIND_TRIP_P.set()
+
+    await callback_query.message.answer('Успех!', reply_markup=ReplyKeyboardMarkup(
+        resize_keyboard=True).row(KeyboardButton("Продолжить")))
+
+    await FIND_TRIP.FINALIZE.set()
+
+
+@dp.message_handler(state=FIND_TRIP.SET_DATE)
+async def create_trip_set_date(msg: types.Message):
+    await msg.answer('Определяем дату поездки', reply_markup=HIDE_KEYBOARD)
+
+    buttons = [
+        [
+            types.InlineKeyboardButton(text="Завтра", callback_data="date_2"),
+            types.InlineKeyboardButton(text="Через два дня", callback_data="date_3")
+        ],
+        # [types.InlineKeyboardButton(text="Начать сначала", callback_data="date_4")]
+    ]
+
+    if datetime.datetime.utcnow().hour < 17:
+        buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
+
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await msg.answer('Выберите число поездки', reply_markup=keyboard)
+
+
+@dp.message_handler(state=FIND_TRIP.FINALIZE)
+async def find_trip_finalize(msg: types.Message):
+    buttons = [[
+        types.InlineKeyboardButton(text="Начать поиск", callback_data="check_1"),
+        types.InlineKeyboardButton(text="Отменить", callback_data="check_2")
+    ]]
+
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    data = db.get_find_trip_info(msg.from_user.id)
+
+    lst = list(data)
+    match lst[2]:
+        case 1:
+            lst[2] = "в Офис"
+        case 2:
+            lst[2] = "из Офиса"
+
+    text = 'Все ли верно?'
+    await msg.answer(text, reply_markup=HIDE_KEYBOARD)
+
+    text = 'Маршрут: метро ' + str(lst[3]) + ' ' + str(lst[2]) + '\nДата: ' + str(lst[0][:-9]) + '\n'
+
+    await msg.answer(text, reply_markup=keyboard)
+
+    await FIND_TRIP.CHECK.set()
+
+
+@dp.callback_query_handler(state=FIND_TRIP.CHECK)
+async def process_callback_find_check(callback_query: types.CallbackQuery):
+    code = ''.join(filter(lambda i: i.isdigit(), callback_query.data))
+
+    match code:
+        case '1':
+            await callback_query.message.answer(text='Результаты поиска:')
+            data = await find_trips(db.get_find_trip_info(callback_query.from_user.id))
+            for key in data:
+                print(key)
+                print(str(data[key][1]['id']))
+                await callback_query.message.answer(data[key][0], reply_markup=InlineKeyboardMarkup().add(
+                    InlineKeyboardButton('Подать заявку',
+                                         callback_data='send' + str(data[key][1]['id']) + "$" + str(key))))
+
+        case '2':
+            pass
+    await callback_query.message.answer('Что вы хотите сделать?', reply_markup=PASSENGER_ACTIONS_KEYBOARD)
+    await UserStates.IDLE_P.set()
 
 
 ########################################################################################################################
@@ -245,7 +513,8 @@ async def driver_choose_update(msg: types.Message):
             await DRIVER.UPD_CAPACITY.set()
         case "Стать пассажиром!":
             await change_role(msg.from_user.id, 2)
-            await msg.answer('Успех! \nТеперь нужно восстановить часть данных.',
+            await msg.answer('Успех! \nТеперь нужно восстановить часть данных.\n\nНе забудьте обновить станцию, '
+                             'откуда вас забрать!!!',
                              reply_markup=HIDE_KEYBOARD)
             await msg.answer(Text.HOW_WILL_BENEFIT_QUESTION,
                              reply_markup=HIDE_KEYBOARD)
@@ -274,7 +543,17 @@ async def d_change_num(msg: types.Message):
 
 @dp.message_handler(state=DRIVER.UPD_STATIONS_D)
 async def d_change_metro(msg: types.Message):
-    await change_metro(msg.from_user.id, 'stations', msg.text)  # bug - need multiple stations
+    stations_to_delete = db.get_driver_r(msg.from_user.id)[5].split(', ')
+    for item in stations_to_delete:
+        metro = await get_metro_id(item)
+        await delete_metro(msg.from_user.id, metro)
+
+    db.update_field(msg.from_user.id, msg.text, 'metro')
+    stations_to_update = msg.text.split(', ')
+    for item in stations_to_update:
+        metro = await get_metro_id(item)
+        await add_metro(msg.from_user.id, metro)
+
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_DRIVER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_D.set()
@@ -310,7 +589,8 @@ async def passenger_choose_update(msg: types.Message):
             await PASSENGER.UPD_BENEFITS.set()
         case "Стать водителем!":
             await change_role(msg.from_user.id, 1)
-            await msg.answer('Успех! \nТеперь нужно восстановить часть данных.',
+            await msg.answer('Успех! \nТеперь нужно восстановить часть данных.\n\nНе забудьте обновить проезжаемые '
+                             'станции метро!!!',
                              reply_markup=HIDE_KEYBOARD)
             await msg.answer(Text.HOW_MANY_FREE_SLOTS_QUESTION,
                              reply_markup=HIDE_KEYBOARD)
@@ -339,7 +619,17 @@ async def p_change_num(msg: types.Message):
 
 @dp.message_handler(state=PASSENGER.UPD_STATION_P)
 async def p_change_metro(msg: types.Message):
-    await change_metro(msg.from_user.id, 'station', msg.text)
+    stations_to_delete = db.get_driver_r(msg.from_user.id)[5].split(', ')
+    for item in stations_to_delete:
+        metro = await get_metro_id(item)
+        await delete_metro(msg.from_user.id, metro)
+
+    db.update_field(msg.from_user.id, msg.text, 'metro')
+    stations_to_update = msg.text.split(', ')
+    for item in stations_to_update:
+        metro = await get_metro_id(item)
+        await add_metro(msg.from_user.id, metro)
+
     await msg.answer('Успех! Что-то еще?',
                      reply_markup=EDIT_PASSENGER_PROFILE_KEYBOARD)
     await UserStates.UPDATE_PROFILE_P.set()
@@ -374,7 +664,40 @@ async def stub2(msg: types.Message):
 
 
 ########################################################################################################################
+# Обработка и отсылка заявок
 
+@dp.callback_query_handler(state='*')
+async def process_request(callback_query: types.CallbackQuery):
+    dollar = callback_query.data.split('$')
+    code = ''.join(filter(lambda i: i.isdigit(), dollar[0]))
+
+    if callback_query.data.startswith('send'):
+
+        data = db.get_passenger_r(callback_query.from_user.id)
+
+        text = "Вам поступила заявка от " + data[1] + "!\nНомер: " + data[2] + "\nТелеграм: @" + data[
+            3] + "\nО себе: " + data[4] + "\nСтанция метро: " + data[5]
+
+        buttons = [[
+            types.InlineKeyboardButton(text="Принять",
+                                       callback_data="post" + str(callback_query.from_user.id) + "$" + str(dollar[1])),
+        ]]
+
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+        await bot.send_message(chat_id=code, text=text, reply_markup=keyboard)
+
+    elif callback_query.data.startswith('post'):
+        await add_passenger(dollar[1], code)
+
+        data = db.get_driver_r(callback_query.from_user.id)
+
+        text = data[1] + " принял вашу заявку!" "!\nНомер: " + data[2] + "\nТелеграм: @" + data[3]
+
+        await bot.send_message(chat_id=code, text=text)
+
+
+########################################################################################################################
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)

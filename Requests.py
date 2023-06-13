@@ -28,7 +28,7 @@ async def get_metro_id(station):
 
 async def register_driver(user):
     headers = {'Content-Type': 'application/json'}
-    station = await get_metro_id(user[5])
+
     payload = {
         "id": user[0],
         "firstName": user[1],
@@ -37,12 +37,12 @@ async def register_driver(user):
         },
         "phone": user[2],
         "tgLink": user[3],
+        "bonus": 0,
         "benefits": "",
         "capacity": user[4],
         "registrationDate": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'),
-        "metro": {
-            "id": station
-        }
+        "metros": []
+
     }
     r = requests.post(url + '/api/v1/user/add', auth=basic, headers=headers, data=json.dumps(payload))
     print(r.text)
@@ -51,7 +51,7 @@ async def register_driver(user):
 
 async def register_passenger(user):
     headers = {'Content-Type': 'application/json'}
-    station = await get_metro_id(user[5])
+
     payload = {
         "id": user[0],
         "firstName": user[1],
@@ -60,16 +60,30 @@ async def register_passenger(user):
         },
         "phone": user[2],
         "tgLink": user[3],
+        "bonus": 0,
         "benefits": user[4],
         "capacity": 0,
         "registrationDate": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'),
-        "metro": {
-            "id": station
-        }
+        "metros": []
+
     }
+
     r = requests.post(url + '/api/v1/user/add', auth=basic, headers=headers, data=json.dumps(payload))
     print(r.text)
     print(payload)
+
+
+async def add_metro(usr, data):
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/user/' + str(usr) + '/addmetro?metroId=' + str(data), auth=basic, headers=headers)
+    print(r.text)
+
+
+async def delete_metro(usr, data):
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/user/' + str(usr) + '/deletemetro?metroId=' + str(data), auth=basic,
+                     headers=headers)
+    print(r.text)
 
 
 async def change_field(i, field, value, db):
@@ -135,7 +149,7 @@ async def current_trips_d(user):
     for item in output_dict:
         user_array = []
         for item2 in item['passengers']:
-            user_array.append(str(item2['firstName'] + ' ' + str(item2['metro']['name'])))
+            user_array.append(str(item2['firstName'] + ' ' + str(item2['metros'][0]['name'])))
 
         x.update({item['id']: {item['tripDate']: user_array}})
     print(x)
@@ -161,5 +175,93 @@ async def annul_trip(i, user):
     r = requests.get(url + '/api/v1/trip/' + i + '/close?userId=' + user, auth=basic, headers=headers)
 
 
+async def delete_passenger(i, user):
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/trip/' + i + '/deletepassenger?userId=' + user, auth=basic, headers=headers)
+
+
+async def create_day(data):
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "days": data[0],
+        "seats": data[1],
+        "user": {
+            "id": data[2]
+        },
+        "destination": {
+            "id": data[3]
+        }
+    }
+
+    r = requests.post(url + '/api/v1/day/add', auth=basic, headers=headers, data=json.dumps(payload))
+    print(r.status_code)
+    print(payload)
+    return r.json()['result']
+
+
+async def create_trip(data, day_id, station_id):
+    headers = {'Content-Type': 'application/json'}
+
+    payload = {
+
+        "driver": {
+            "id": data[2]
+        },
+        "passengers": [],
+        "status": {
+            "id": 1
+        },
+        "destination": {
+            "id": data[3]
+        },
+        "tripDate": data[0],
+        "day": {
+            "id": day_id
+        },
+        "metro": {
+            "id": station_id
+        }
+
+    }
+
+    r = requests.post(url + '/api/v1/trip/add', auth=basic, headers=headers, data=json.dumps(payload))
+    print(r.status_code)
+    print(r.text)
+    print(payload)
+    return r.json()['result']
+
+
+async def find_trips(data):
+    headers = {'Content-Type': 'application/json'}
+
+    station = await get_metro_id(data[3])
+
+    payload = {
+        "dateTrip": data[0],
+        "metro": station,
+        "destination": data[2]
+    }
+
+    r = requests.post(url + '/api/v1/trip/findtrips', auth=basic, headers=headers, data=json.dumps(payload))
+    print(r.text)
+
+    x = {}
+
+    input_dict = r.json()
+    output_dict = [x for x in input_dict['result'] if x['status']['id'] == 1]
+    for item in output_dict:
+        x.update({item['id']: [{item['tripDate']: item['driver']['firstName']}, {"id": item['driver']['id']}]})
+    print(x)
+    return x
+
+
+async def add_passenger(i, user):
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/trip/' + i + '/addpassenger?passengerId=' + user, auth=basic, headers=headers)
+    print(r.text)
+    print(r.content)
+
+
+
 if __name__ == '__main__':
-    asyncio.run(current_trips_p('739808500'))
+    asyncio.run(find_trips(("2023-06-15T00:00:00", '', 1, 'Лесная')))
