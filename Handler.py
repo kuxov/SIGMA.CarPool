@@ -2,14 +2,14 @@ import random
 import re
 import string
 from datetime import timedelta
-
-import aioschedule
+import pytz
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import loader
 from aiogram import Bot, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import *
 from aiogram.types import message, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils import executor
-
 import logging
 import Text
 from Keyboard import *
@@ -23,11 +23,24 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 db = DB()
+scheduler = AsyncIOScheduler()
 
 
 def randomword(length):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(length))
+
+
+async def send_approval(data, i, key):
+    txt = 'Ваша поездка с ' + data + ' состоялась ?'
+    buttons = [[
+        types.InlineKeyboardButton(text="Да 😎", callback_data="yes" + str(key)),
+        types.InlineKeyboardButton(text="Нет 😡", callback_data="no" + str(key))
+    ]]
+
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await bot.send_message(chat_id=i, text=txt, reply_markup=keyboard)
 
 
 @dp.message_handler(commands=['start'])
@@ -238,15 +251,15 @@ async def process_callback_date_d(callback_query: types.CallbackQuery):
     match code:
         case '1':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
                     datetime.timedelta(days=0)).strftime('%Y-%m-%d'), 'trip_date')
         case '2':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
                     datetime.timedelta(days=1)).strftime('%Y-%m-%d'), 'trip_date')
         case '3':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
                     datetime.timedelta(days=2)).strftime('%Y-%m-%d'), 'trip_date')
 
     #  case '4':
@@ -269,8 +282,8 @@ async def create_trip_set_date(msg: types.Message):
         # [types.InlineKeyboardButton(text="Начать сначала", callback_data="date_4")]
     ]
 
-    if datetime.datetime.utcnow().hour < 17:
-        buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
+    # if datetime.datetime.utcnow().hour < 17:
+    buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -398,15 +411,15 @@ async def process_callback_date_p(callback_query: types.CallbackQuery):
     match code:
         case '1':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
                     datetime.timedelta(days=0)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
         case '2':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
                     datetime.timedelta(days=1)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
         case '3':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
                     datetime.timedelta(days=2)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
     #  case '4':
     #     await UserStates.FIND_TRIP_P.set()
@@ -429,7 +442,7 @@ async def create_trip_set_date(msg: types.Message):
         # [types.InlineKeyboardButton(text="Начать сначала", callback_data="date_4")]
     ]
 
-    if datetime.datetime.utcnow().hour < 17:
+    if datetime.datetime.now(pytz.timezone('Europe/Moscow')).hour < 17:
         buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -692,12 +705,23 @@ async def process_request(callback_query: types.CallbackQuery):
 
         data = db.get_driver_r(callback_query.from_user.id)
 
-        text = data[1] + " принял вашу заявку!" "!\nНомер: " + data[2] + "\nТелеграм: @" + data[3]
+        text = data[1] + " принял(а) вашу заявку!" "!\nНомер: " + data[2] + "\nТелеграм: @" + data[3]
 
         await bot.send_message(chat_id=code, text=text)
+
+        rd = datetime.datetime.strptime(await return_date(code, dollar[1]), '%Y-%m-%dT%H:%M:%S') + datetime.timedelta(
+            hours=2)
+
+        scheduler.add_job(send_approval, "date", run_date=rd, args=(data[1], code, dollar[1],))
+
+    elif callback_query.data.startswith('yes'):
+        await annul_trip(code, str(callback_query.from_user.id))
+    elif callback_query.data.startswith('no'):
+        pass
 
 
 ########################################################################################################################
 
 if __name__ == '__main__':
+    scheduler.start()
     executor.start_polling(dp, skip_updates=True)

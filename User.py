@@ -4,7 +4,7 @@ import psycopg2
 class DB:
 
     def __init__(self):
-        self.conn = psycopg2.connect()
+
         self.cursor = self.conn.cursor()
 
     def user_init(self, usr, cht, tg):

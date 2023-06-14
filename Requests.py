@@ -1,7 +1,7 @@
 import asyncio
 import datetime
 import json
-
+import pytz
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -40,7 +40,7 @@ async def register_driver(user):
         "bonus": 0,
         "benefits": "",
         "capacity": user[4],
-        "registrationDate": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'),
+        "registrationDate": datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%Y-%m-%dT%H:%M:%S'),
         "metros": []
 
     }
@@ -63,7 +63,7 @@ async def register_passenger(user):
         "bonus": 0,
         "benefits": user[4],
         "capacity": 0,
-        "registrationDate": datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S'),
+        "registrationDate": datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
         "metros": []
 
     }
@@ -173,6 +173,8 @@ async def current_trips_p(user):
 async def annul_trip(i, user):
     headers = {'Content-Type': 'application/json'}
     r = requests.get(url + '/api/v1/trip/' + i + '/close?userId=' + user, auth=basic, headers=headers)
+    print(r.text)
+    print(r.status_code)
 
 
 async def delete_passenger(i, user):
@@ -262,6 +264,19 @@ async def add_passenger(i, user):
     print(r.content)
 
 
+async def return_date(user, trip):
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/trip/gettripsbyuserid?userId=' + str(user), auth=basic, headers=headers)
+
+    input_dict = r.json()
+    output_dict = {}
+    for item in input_dict['result']:
+        if item['id'] == int(trip):
+            output_dict.update({'dt': item})
+
+    print(output_dict['dt']['tripDate'])
+    return output_dict['dt']['tripDate']
+
 
 if __name__ == '__main__':
-    asyncio.run(find_trips(("2023-06-15T00:00:00", '', 1, 'Лесная')))
+    asyncio.run(return_date(739808500, 36))
