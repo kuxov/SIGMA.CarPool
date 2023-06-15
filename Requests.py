@@ -5,7 +5,8 @@ import pytz
 import requests
 from requests.auth import HTTPBasicAuth
 
-
+url = ''
+basic = HTTPBasicAuth('', '')
 
 
 async def get_user_role(user_id):
@@ -63,7 +64,7 @@ async def register_passenger(user):
         "bonus": 0,
         "benefits": user[4],
         "capacity": 0,
-        "registrationDate": datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        "registrationDate": datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%Y-%m-%dT%H:%M:%S'),
         "metros": []
 
     }

@@ -17,7 +17,7 @@ from Requests import *
 from States import *
 from User import *
 
-
+TOKEN = ''
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 logging.basicConfig(level=logging.DEBUG,
@@ -73,6 +73,7 @@ async def send_welcome(msg: types.Message):
 async def start_registering(msg: types.Message):
     if msg.text == 'Нет':
         await msg.answer(Text.ARENT_EMPLOYED_MESSAGE, reply_markup=types.ReplyKeyboardRemove())
+        db.delete_user(msg.from_user.id)
         await UserStates.BANNED.set()
     elif msg.text == 'Да':
         await msg.answer(Text.WHATS_YOUR_NAME_QUESTION, reply_markup=types.ReplyKeyboardRemove())
@@ -165,7 +166,8 @@ async def get_benefits(msg: types.Message):
     db.set_benefits(msg.text, msg.from_user.id)
 
     await register_passenger(db.get_passenger_r(msg.from_user.id))
-
+    station = db.get_passenger_r(msg.from_user.id)[5]
+    await add_metro(msg.from_user.id, station)
     await msg.answer(Text.REGISTRARION_ENDED_MESSAGE,
                      reply_markup=PASSENGER_ACTIONS_KEYBOARD)
     await UserStates.IDLE_P.set()
@@ -251,16 +253,16 @@ async def process_callback_date_d(callback_query: types.CallbackQuery):
     match code:
         case '1':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
-                    datetime.timedelta(days=0)).strftime('%Y-%m-%d'), 'trip_date')
+                    datetime.now(pytz.timezone('Europe/Moscow')) +
+                    timedelta(days=0)).strftime('%Y-%m-%d'), 'trip_date')
         case '2':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
-                    datetime.timedelta(days=1)).strftime('%Y-%m-%d'), 'trip_date')
+                    datetime.now(pytz.timezone('Europe/Moscow')) +
+                    timedelta(days=1)).strftime('%Y-%m-%d'), 'trip_date')
         case '3':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
-                    datetime.timedelta(days=2)).strftime('%Y-%m-%d'), 'trip_date')
+                    datetime.now(pytz.timezone('Europe/Moscow')) +
+                    timedelta(days=2)).strftime('%Y-%m-%d'), 'trip_date')
 
     #  case '4':
     #     await UserStates.CREATE_TRIP_D.set()
@@ -411,16 +413,16 @@ async def process_callback_date_p(callback_query: types.CallbackQuery):
     match code:
         case '1':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
-                    datetime.timedelta(days=0)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
+                    datetime.now(pytz.timezone('Europe/Moscow')) +
+                    timedelta(days=0)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
         case '2':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
-                    datetime.timedelta(days=1)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
+                    datetime.now(pytz.timezone('Europe/Moscow')) +
+                    timedelta(days=1)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
         case '3':
             db.set_trip_field(callback_query.from_user.id, (
-                    datetime.datetime.now(pytz.timezone('Europe/Moscow')) +
-                    datetime.timedelta(days=2)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
+                    datetime.now(pytz.timezone('Europe/Moscow')) +
+                    timedelta(days=2)).strftime('%Y-%m-%dT00:00:00'), 'trip_date')
     #  case '4':
     #     await UserStates.FIND_TRIP_P.set()
 
@@ -442,8 +444,8 @@ async def create_trip_set_date(msg: types.Message):
         # [types.InlineKeyboardButton(text="Начать сначала", callback_data="date_4")]
     ]
 
-    if datetime.datetime.now(pytz.timezone('Europe/Moscow')).hour < 17:
-        buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
+    #if datetime.now(pytz.timezone('Europe/Moscow')).hour < 17:
+    buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -709,8 +711,8 @@ async def process_request(callback_query: types.CallbackQuery):
 
         await bot.send_message(chat_id=code, text=text)
 
-        rd = datetime.datetime.strptime(await return_date(code, dollar[1]), '%Y-%m-%dT%H:%M:%S') + datetime.timedelta(
-            hours=2)
+        rd = datetime.strptime(await return_date(code, dollar[1]), '%Y-%m-%dT%H:%M:%S') + timedelta(
+            seconds=5)  # hours 2
 
         scheduler.add_job(send_approval, "date", run_date=rd, args=(data[1], code, dollar[1],))
 
@@ -725,3 +727,4 @@ async def process_request(callback_query: types.CallbackQuery):
 if __name__ == '__main__':
     scheduler.start()
     executor.start_polling(dp, skip_updates=True)
+    #scheduler.add_job(db.get_total_num, "cron", month=1)
