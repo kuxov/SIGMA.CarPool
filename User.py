@@ -7,14 +7,16 @@ from google.oauth2.service_account import Credentials
 import json
 import pandas as pd
 
-
+scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+creds = Credentials.from_service_account_file("sigma-carpool-bot-7b02817491f7.json", scopes=scope)
 client = gspread.authorize(creds)
 
 
 class DB:
 
     def __init__(self):
-        self.conn = psycopg2.connect()
+        self.conn = psycopg2.connect(dbname='SIGMA.CarPool', user='postgres',
+                                     password='kali', host='localhost')
         self.cursor = self.conn.cursor()
 
     def delete_user(self, usr):

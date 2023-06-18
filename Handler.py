@@ -17,7 +17,7 @@ from Requests import *
 from States import *
 from User import *
 
-TOKEN = ''
+TOKEN = '5868590785:AAHF_Y3l6sMGy-JIrCgX95kB0L7Dxa9f918'
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 logging.basicConfig(level=logging.DEBUG,
@@ -29,6 +29,16 @@ scheduler = AsyncIOScheduler()
 def randomword(length):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(length))
+
+
+async def send_msg_d(i):
+    txt = 'Напоминаю, что у вас начинается поездка через полчаса!'
+    await bot.send_message(chat_id=i, text=txt, reply_markup=HIDE_KEYBOARD)
+
+
+async def send_msg_p(data, i):
+    txt = 'Напоминаю, что ' + data + ' начинает поездку через полчаса!'
+    await bot.send_message(chat_id=i, text=txt, reply_markup=HIDE_KEYBOARD)
 
 
 async def send_approval(data, i, key):
@@ -444,7 +454,7 @@ async def create_trip_set_date(msg: types.Message):
         # [types.InlineKeyboardButton(text="Начать сначала", callback_data="date_4")]
     ]
 
-    #if datetime.now(pytz.timezone('Europe/Moscow')).hour < 17:
+    # if datetime.now(pytz.timezone('Europe/Moscow')).hour < 17:
     buttons[0].insert(0, types.InlineKeyboardButton(text="Сегодня", callback_data="date_1"))
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -712,10 +722,13 @@ async def process_request(callback_query: types.CallbackQuery):
         await bot.send_message(chat_id=code, text=text)
 
         rd = datetime.strptime(await return_date(code, dollar[1]), '%Y-%m-%dT%H:%M:%S') + timedelta(
-            seconds=5)  # hours 2
+            seconds=4)  # + 2h
+        rd1 = datetime.strptime(await return_date(code, dollar[1]), '%Y-%m-%dT%H:%M:%S') + timedelta(
+            seconds=2)  # - 30m
 
         scheduler.add_job(send_approval, "date", run_date=rd, args=(data[1], code, dollar[1],))
-
+        scheduler.add_job(send_msg_p, "date", run_date=rd1, args=(data[1], code,))
+        scheduler.add_job(send_msg_d, "date", run_date=rd1, args=(callback_query.from_user.id,))
     elif callback_query.data.startswith('yes'):
         await annul_trip(code, str(callback_query.from_user.id))
     elif callback_query.data.startswith('no'):
@@ -727,4 +740,4 @@ async def process_request(callback_query: types.CallbackQuery):
 if __name__ == '__main__':
     scheduler.start()
     executor.start_polling(dp, skip_updates=True)
-    #scheduler.add_job(db.get_total_num, "cron", month=1)
+    scheduler.add_job(db.get_total_num, "cron", month=1)

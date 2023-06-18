@@ -5,8 +5,8 @@ import pytz
 import requests
 from requests.auth import HTTPBasicAuth
 
-url = ''
-basic = HTTPBasicAuth('', '')
+url = 'http://carpolltest-001-site1.atempurl.com'
+basic = HTTPBasicAuth('test', '1')
 
 
 async def get_user_role(user_id):
