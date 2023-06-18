@@ -176,7 +176,7 @@ async def get_benefits(msg: types.Message):
     db.set_benefits(msg.text, msg.from_user.id)
 
     await register_passenger(db.get_passenger_r(msg.from_user.id))
-    station = db.get_passenger_r(msg.from_user.id)[5]
+    station = await get_metro_id(db.get_passenger_r(msg.from_user.id)[5])
     await add_metro(msg.from_user.id, station)
     await msg.answer(Text.REGISTRARION_ENDED_MESSAGE,
                      reply_markup=PASSENGER_ACTIONS_KEYBOARD)
