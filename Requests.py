@@ -5,8 +5,8 @@ import pytz
 import requests
 from requests.auth import HTTPBasicAuth
 
-url = 'http://carpolltest-001-site1.atempurl.com'
-basic = HTTPBasicAuth('test', '1')
+url = ''
+basic = HTTPBasicAuth()
 
 
 async def get_user_role(user_id):
@@ -279,5 +279,23 @@ async def return_date(user, trip):
     return output_dict['dt']['tripDate']
 
 
+async def get_leader():
+    headers = {'Content-Type': 'application/json'}
+    r = requests.get(url + '/api/v1/day/getall', auth=basic, headers=headers)
+    max_value = 0
+    input_dict = r.json()
+    output_dict = {}
+    for item in input_dict['result']:
+        if item['user']['bonus'] > max_value:
+            max_value = item['user']['bonus']
+
+    for item in input_dict['result']:
+        if item['user']['bonus'] == max_value:
+            output_dict.update({item['user']['id']: item['user']['bonus']})
+
+    print(output_dict)
+    return output_dict
+
+
 if __name__ == '__main__':
-    asyncio.run(return_date(739808500, 36))
+    asyncio.run(get_leader())

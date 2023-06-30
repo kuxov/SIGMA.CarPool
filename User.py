@@ -1,5 +1,5 @@
 from datetime import datetime
-
+import pyodbc
 import psycopg2
 import pytz
 import gspread
@@ -7,9 +7,10 @@ from google.oauth2.service_account import Credentials
 import json
 import pandas as pd
 
-scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-creds = Credentials.from_service_account_file("sigma-carpool-bot-7b02817491f7.json", scopes=scope)
-client = gspread.authorize(creds)
+
+# scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+# creds = Credentials.from_service_account_file("sigma-carpool-bot-7b02817491f7.json", scopes=scope)
+# client = gspread.authorize(creds)
 
 
 class DB:
@@ -110,6 +111,8 @@ class DB:
         for row in self.cursor:
             return row
 
+
+''' выгрузка отчетов
     def get_total_num(self):
         x = []
 
@@ -143,11 +146,9 @@ Order by gen_month asc
         x.append(["Total", ttl])
 
         sheet1.append_rows(values=x)
-
+'''
 
 ########################################################################################################################
 
-
 if __name__ == '__main__':
     db = DB()
-    print(db.get_total_num())

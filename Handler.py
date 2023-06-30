@@ -17,7 +17,7 @@ from Requests import *
 from States import *
 from User import *
 
-TOKEN = '5868590785:AAHF_Y3l6sMGy-JIrCgX95kB0L7Dxa9f918'
+TOKEN = ''
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 logging.basicConfig(level=logging.DEBUG,
@@ -29,6 +29,15 @@ scheduler = AsyncIOScheduler()
 def randomword(length):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(length))
+
+
+async def send_leaders():
+    lst = await get_leader()
+
+    txt = 'Поздравляю!\nВы набрали наибольшее количество баллов в этом месяце!!✨'
+
+    for key in lst.keys():
+        await bot.send_message(chat_id=key, text=txt, reply_markup=HIDE_KEYBOARD)
 
 
 async def send_msg_d(i):
@@ -739,5 +748,7 @@ async def process_request(callback_query: types.CallbackQuery):
 
 if __name__ == '__main__':
     scheduler.start()
+    #scheduler.add_job(send_leaders, "cron", minute=1)
+    #scheduler.add_job(db.get_total_num, "cron", minute=1)
     executor.start_polling(dp, skip_updates=True)
-    scheduler.add_job(db.get_total_num, "cron", month=1)
+
